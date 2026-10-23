@@ -34,3 +34,4 @@ npm run dev
 ## Configuration
 
 Configure your database credentials and environment variables locally. Do not commit passwords, email credentials, or API keys.
+# system-school-management
