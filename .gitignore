@@ -1,0 +1,14 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+backend/target/
+backend/.idea/
+backend/*.iml
+
+student-mgmt/node_modules/
+student-mgmt/dist/
+student-mgmt/.env
+student-mgmt/.env.*
+!student-mgmt/.env.example
