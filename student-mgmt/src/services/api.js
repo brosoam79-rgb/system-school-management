@@ -1,6 +1,8 @@
 import { mockStudents, mockClasses, mockAttendance, mockActivities } from '../data/mockData'
 
-const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080').replace(/\/$/, '')
+const API_BASE_URL = (
+  import.meta.env.VITE_BACKEND_URL || "http://localhost:8080"
+).replace(/\/$/, "");
 
 const readApiError = async (response) => {
   let message = `Request failed (${response.status})`
@@ -122,6 +124,19 @@ export const studentService = {
     const student = await response.json()
     students.unshift(student)
     persistStudents()
+
+    const activity = {
+      id: Date.now(),
+      type: 'add',
+      message: `New student ${student.name} enrolled in ${student.class}`,
+      time: 'just now',
+      icon: 'student',
+    }
+    activities.unshift(activity)
+    activities = activities.slice(0, 10)
+    persistActivities()
+    events.emit('activity', activity)
+
     return student
   },
   update: async (id, data) => {

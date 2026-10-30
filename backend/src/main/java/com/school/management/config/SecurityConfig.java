@@ -1,4 +1,3 @@
-
 package com.school.management.config;
 
 import com.school.management.security.JwtAuthenticationFilter;
@@ -25,167 +24,98 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
 
- @Bean
- public PasswordEncoder passwordEncoder() {
-  return new BCryptPasswordEncoder();
- }
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 
- @Bean
- public SecurityFilterChain securityFilterChain(
-         HttpSecurity http,
-         JwtAuthenticationFilter jwtFilter
- ) throws Exception {
+    @Bean
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            JwtAuthenticationFilter jwtFilter
+    ) throws Exception {
 
-  http
-          .csrf(csrf -> csrf.disable())
+        http
+                .csrf(csrf -> csrf.disable())
+                .cors(Customizer.withDefaults())
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-          .cors(Customizer.withDefaults())
+                .authorizeHttpRequests(auth -> auth
 
-          .sessionManagement(session ->
-                  session.sessionCreationPolicy(
-                          SessionCreationPolicy.STATELESS
-                  )
-          )
+                        // CORS preflight
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-          .authorizeHttpRequests(auth -> auth
+                        // Public auth endpoints
+                        // NOTE: make sure register ALWAYS creates role USER (never trust role from request)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/auth/login",
+                                "/api/auth/register").permitAll()
 
-                  // Allow browser CORS preflight requests
-                  .requestMatchers(
-                          HttpMethod.OPTIONS, "/**"
-                  ).permitAll()
+                        // Public health check and error endpoint
+                        .requestMatchers("/api/health", "/error").permitAll()
 
-                  // Public authentication endpoints
-                  .requestMatchers(
-                          HttpMethod.POST,
-                          "/api/auth/login",
-                          "/api/auth/register"
-                  ).permitAll()
+                        // STUDENTS: ADMIN can create, update, delete
+                        .requestMatchers(HttpMethod.POST, "/api/students/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/students/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/students/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/students/**").hasRole("ADMIN")
 
-                  // Public health check and error endpoint
-                  .requestMatchers(
-                          "/api/health",
-                          "/error"
-                  ).permitAll()
+                        // STUDENTS: ADMIN and USER can view
+                        .requestMatchers(HttpMethod.GET, "/api/students/**").hasAnyRole("ADMIN", "USER")
 
-                  // STUDENTS: ADMIN can create, update and delete
-                  .requestMatchers(
-                          HttpMethod.POST,
-                          "/api/students",
-                          "/api/students/**"
-                  ).hasRole("ADMIN")
+                        // ATTENDANCE: only ADMIN can delete
+                        .requestMatchers(HttpMethod.DELETE, "/api/attendance/**").hasRole("ADMIN")
 
-                  .requestMatchers(
-                          HttpMethod.PUT,
-                          "/api/students",
-                          "/api/students/**"
-                  ).hasRole("ADMIN")
+                        // ATTENDANCE: ADMIN and USER can view and record
+                        .requestMatchers(HttpMethod.GET, "/api/attendance/**").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.POST, "/api/attendance/**").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.PUT, "/api/attendance/**").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.PATCH, "/api/attendance/**").hasAnyRole("ADMIN", "USER")
 
-                  .requestMatchers(
-                          HttpMethod.PATCH,
-                          "/api/students",
-                          "/api/students/**"
-                  ).hasRole("ADMIN")
+                        // Admin-only endpoints
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-                  .requestMatchers(
-                          HttpMethod.DELETE,
-                          "/api/students",
-                          "/api/students/**"
-                  ).hasRole("ADMIN")
+                        // Everything else requires authentication
+                        .anyRequest().authenticated()
+                )
 
-                  // Both ADMIN and USER can view students
-                  .requestMatchers(
-                          HttpMethod.GET,
-                          "/api/students",
-                          "/api/students/**"
-                  ).hasAnyRole("ADMIN", "USER")
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
-                  // ATTENDANCE: Both roles can view and record attendance
-                  .requestMatchers(
-                          HttpMethod.GET,
-                          "/api/attendance",
-                          "/api/attendance/**"
-                  ).hasAnyRole("ADMIN", "USER")
+        return http.build();
+    }
 
-                  .requestMatchers(
-                          HttpMethod.POST,
-                          "/api/attendance",
-                          "/api/attendance/**"
-                  ).hasAnyRole("ADMIN", "USER")
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origin:http://localhost:5173}") String origin
+    ) {
 
-                  .requestMatchers(
-                          HttpMethod.PUT,
-                          "/api/attendance",
-                          "/api/attendance/**"
-                  ).hasAnyRole("ADMIN", "USER")
+        // Remove trailing slash so it matches the browser Origin header exactly
+        String cleanOrigin = origin.endsWith("/")
+                ? origin.substring(0, origin.length() - 1)
+                : origin;
 
-                  .requestMatchers(
-                          HttpMethod.PATCH,
-                          "/api/attendance",
-                          "/api/attendance/**"
-                  ).hasAnyRole("ADMIN", "USER")
+        CorsConfiguration config = new CorsConfiguration();
 
-                  // Only ADMIN can delete attendance records
-                  .requestMatchers(
-                          HttpMethod.DELETE,
-                          "/api/attendance",
-                          "/api/attendance/**"
-                  ).hasRole("ADMIN")
+        config.setAllowedOrigins(List.of(
+                cleanOrigin,
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:3000",
+                "http://localhost:5175"
+        ));
 
-                  // Admin-only endpoints
-                  .requestMatchers(
-                          "/api/admin/**"
-                  ).hasRole("ADMIN")
+        config.setAllowedMethods(List.of(
+                "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+        ));
 
-                  // Everything else requires authentication
-                  .anyRequest().authenticated()
-          )
+        config.setAllowedHeaders(List.of("*"));
 
-          .addFilterBefore(
-                  jwtFilter,
-                  UsernamePasswordAuthenticationFilter.class
-          );
+        config.setAllowCredentials(false);
 
-  return http.build();
- }
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
 
- @Bean
- public CorsConfigurationSource corsConfigurationSource(
-         @Value("${app.cors.allowed-origin:http://localhost:5173}")
-         String origin
- ) {
-
-  CorsConfiguration config = new CorsConfiguration();
-
-  config.setAllowedOrigins(List.of(
-          origin,
-          "http://localhost:5173",
-          "http://127.0.0.1:5173",
-          "http://localhost:3000",
-          "http://localhost:5175"
-  ));
-
-  config.setAllowedMethods(List.of(
-          "GET",
-          "POST",
-          "PUT",
-          "PATCH",
-          "DELETE",
-          "OPTIONS"
-  ));
-
-  config.setAllowedHeaders(List.of(
-          "Authorization",
-          "Content-Type",
-          "Accept"
-  ));
-
-  config.setAllowCredentials(false);
-
-  UrlBasedCorsConfigurationSource source =
-          new UrlBasedCorsConfigurationSource();
-
-  source.registerCorsConfiguration("/**", config);
-
-  return source;
- }
+        return source;
+    }
 }

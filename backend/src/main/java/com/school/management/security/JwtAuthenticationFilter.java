@@ -8,6 +8,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -17,9 +19,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtService jwt;
     private final AppUserRepository users;
@@ -43,8 +49,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (header == null
                 || !header.startsWith("Bearer ")
-                || SecurityContextHolder.getContext()
-                .getAuthentication() != null) {
+                || SecurityContextHolder.getContext().getAuthentication() != null) {
 
             chain.doFilter(request, response);
             return;
@@ -67,32 +72,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
-            users.findByEmailIgnoreCase(email.trim())
-                    .filter(AppUser::isEnabled)
-                    .ifPresent(user -> {
-                        String role = normalizeRole(user.getRole());
+            Optional<AppUser> found = users.findByEmailIgnoreCase(email.trim());
 
-                        if (!role.equals("ADMIN")
-                                && !role.equals("USER")) {
-                            return;
-                        }
+            if (found.isPresent() && found.get().isEnabled()) {
+                AppUser user = found.get();
+                String role = normalizeRole(user.getRole());
 
-                        var authentication =
-                                new UsernamePasswordAuthenticationToken(
-                                        user.getEmail(),
-                                        null,
-                                        List.of(
-                                                new SimpleGrantedAuthority(
-                                                        "ROLE_" + role
-                                                )
-                                        )
-                                );
+                if (role.equals("ADMIN") || role.equals("USER")) {
+                    var authentication = new UsernamePasswordAuthenticationToken(
+                            user.getEmail(),
+                            null,
+                            List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                    );
 
-                        SecurityContextHolder.getContext()
-                                .setAuthentication(authentication);
-                    });
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
+                    log.warn("JWT user '{}' has unsupported role '{}'", email, role);
+                }
+            } else {
+                log.debug("JWT user '{}' not found or disabled", email);
+            }
 
         } catch (Exception exception) {
+            // Do not leak details to the client, but keep a log for debugging
+            log.warn("JWT authentication failed: {}", exception.getMessage());
             SecurityContextHolder.clearContext();
         }
 

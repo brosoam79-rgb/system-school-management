@@ -12,6 +12,9 @@ export function getDisplayName(user) {
 }
 
 export function isAdminUser(user) {
-  const role = String(user?.role || user?.userType || '').toLowerCase()
+  const role = String(user?.role || user?.userType || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^role_/, '')
   return role === 'admin' || role === 'administrator'
 }

@@ -1,4 +1,3 @@
-
 package com.school.management.security;
 
 import io.jsonwebtoken.Claims;
@@ -10,10 +9,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 @Service
 public class JwtService {
+
+    private static final int MIN_KEY_BYTES = 32; // 256 bits for HS256
 
     private final SecretKey key;
     private final long expirationMs;
@@ -23,42 +25,52 @@ public class JwtService {
             @Value("${app.jwt.expiration-ms}") long expirationMs
     ) {
         if (secret == null || secret.isBlank()) {
-            throw new IllegalArgumentException(
-                    "app.jwt.secret must not be empty"
-            );
+            throw new IllegalArgumentException("app.jwt.secret must not be empty");
         }
 
         if (expirationMs <= 0) {
             throw new IllegalArgumentException(
-                    "app.jwt.expiration-ms must be greater than zero"
-            );
+                    "app.jwt.expiration-ms must be greater than zero");
         }
+
+        this.key = buildKey(secret.trim());
+        this.expirationMs = expirationMs;
+    }
+
+    /**
+     * Accepts either:
+     *  1) a Base64 secret (e.g. from: openssl rand -base64 48), or
+     *  2) a plain-text secret of at least 32 characters.
+     */
+    private SecretKey buildKey(String secret) {
+        byte[] keyBytes;
 
         try {
-            byte[] keyBytes = Decoders.BASE64.decode(secret);
-            this.key = Keys.hmacShaKeyFor(keyBytes);
-        } catch (RuntimeException exception) {
-            throw new IllegalArgumentException(
-                    "app.jwt.secret must be a valid Base64-encoded key " +
-                            "of sufficient length for the configured JWT algorithm",
-                    exception
-            );
+            keyBytes = Decoders.BASE64.decode(secret);
+        } catch (RuntimeException notBase64) {
+            keyBytes = null;
         }
 
-        this.expirationMs = expirationMs;
+        if (keyBytes == null || keyBytes.length < MIN_KEY_BYTES) {
+            keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        }
+
+        if (keyBytes.length < MIN_KEY_BYTES) {
+            throw new IllegalArgumentException(
+                    "app.jwt.secret is too short. Use at least 32 characters. "
+                            + "Generate one with: openssl rand -base64 48");
+        }
+
+        return Keys.hmacShaKeyFor(keyBytes);
     }
 
     public String create(String email, String role) {
         if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Email is required to create JWT"
-            );
+            throw new IllegalArgumentException("Email is required to create JWT");
         }
 
         if (role == null || role.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Role is required to create JWT"
-            );
+            throw new IllegalArgumentException("Role is required to create JWT");
         }
 
         long now = System.currentTimeMillis();
@@ -74,9 +86,7 @@ public class JwtService {
 
     public Claims claims(String token) {
         if (token == null || token.isBlank()) {
-            throw new IllegalArgumentException(
-                    "JWT token is required"
-            );
+            throw new IllegalArgumentException("JWT token is required");
         }
 
         return Jwts.parser()
